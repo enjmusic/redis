@@ -3,6 +3,7 @@ package pool
 import (
 	"context"
 	"errors"
+	"log"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -371,6 +372,7 @@ func (p *ConnPool) Put(ctx context.Context, cn *Conn) {
 }
 
 func (p *ConnPool) Remove(ctx context.Context, cn *Conn, reason error) {
+	log.Printf("closing bad conn: %s", reason)
 	p.removeConnWithLock(cn)
 	p.freeTurn()
 	_ = p.closeConn(cn)
