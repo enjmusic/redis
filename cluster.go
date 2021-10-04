@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"log"
 	"math"
 	"net"
 	"runtime"
@@ -703,6 +704,8 @@ type ClusterClient struct {
 // NewClusterClient returns a Redis Cluster client as described in
 // http://redis.io/topics/cluster-spec.
 func NewClusterClient(opt *ClusterOptions) *ClusterClient {
+	log.Printf("Starting new forked cluster client for %v", opt.Addrs)
+
 	opt.init()
 
 	c := &ClusterClient{
