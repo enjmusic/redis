@@ -52,6 +52,18 @@ type ClusterOptions struct {
 	// and Cluster.ReloadState to manually trigger state reloading.
 	ClusterSlots func(context.Context) ([]ClusterSlot, error)
 
+	// Debugging hooks for logging/metrics in command processing attempt loop
+
+	// Called when a moved/ask response is given while processing a command -
+	// the `variant` here is "moved" or "ask" respectively
+	MovedHook func(cmdName string, attempt int, variant string)
+
+	// Called when getting the node for a command fails
+	GetNodeErrorHook func(cmdName string, attempt int, err error)
+
+	// Called when a node is marked as failing
+	NodeFailingHook func(cmdName string, attempt int)
+
 	// Following options are copied from Options struct.
 
 	Dialer func(ctx context.Context, network, addr string) (net.Conn, error)
@@ -789,6 +801,10 @@ func (c *ClusterClient) process(ctx context.Context, cmd Cmder) error {
 			var err error
 			node, err = c.cmdNode(ctx, cmdInfo, slot)
 			if err != nil {
+				if c.opt.GetNodeErrorHook != nil {
+					c.opt.GetNodeErrorHook(cmd.Name(), attempt, err)
+				}
+
 				return err
 			}
 		}
@@ -827,9 +843,22 @@ func (c *ClusterClient) process(ctx context.Context, cmd Cmder) error {
 		var addr string
 		moved, ask, addr = isMovedError(lastErr)
 		if moved || ask {
+			if c.opt.MovedHook != nil {
+				variant := "moved"
+				if ask {
+					variant = "ask"
+				}
+
+				c.opt.MovedHook(cmd.Name(), attempt, variant)
+			}
+
 			var err error
 			node, err = c.nodes.Get(addr)
 			if err != nil {
+				if c.opt.GetNodeErrorHook != nil {
+					c.opt.GetNodeErrorHook(cmd.Name(), attempt, err)
+				}
+
 				return err
 			}
 			continue
@@ -839,6 +868,10 @@ func (c *ClusterClient) process(ctx context.Context, cmd Cmder) error {
 			// First retry the same node.
 			if attempt == 0 {
 				continue
+			}
+
+			if c.opt.NodeFailingHook != nil {
+				c.opt.NodeFailingHook(cmd.Name(), attempt)
 			}
 
 			// Second try another node.
