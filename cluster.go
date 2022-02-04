@@ -56,7 +56,7 @@ type ClusterOptions struct {
 
 	// Called when a moved/ask response is given while processing a command -
 	// the `variant` here is "moved" or "ask" respectively
-	MovedHook func(cmdName string, attempt int, variant string)
+	MovedHook func(cmdName string, attempt int, variant string, err error)
 
 	// Called when getting the node for a command fails
 	GetNodeErrorHook func(cmdName string, attempt int, err error)
@@ -849,7 +849,7 @@ func (c *ClusterClient) process(ctx context.Context, cmd Cmder) error {
 					variant = "ask"
 				}
 
-				c.opt.MovedHook(cmd.Name(), attempt, variant)
+				c.opt.MovedHook(cmd.Name(), attempt, variant, lastErr)
 			}
 
 			var err error
