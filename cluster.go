@@ -64,6 +64,13 @@ type ClusterOptions struct {
 	// Called when a node is marked as failing
 	NodeFailingHook func(cmdName string, attempt int)
 
+	// Called when a node is GC'd
+	NodeGCHook func(addr string)
+
+	// Called when we make new cluster state - takes `origin` (the host
+	// we got the slots from) and `numSlots`, the # of slots we got back
+	NewClusterStateHook func(origin string, numSlots int)
+
 	// Following options are copied from Options struct.
 
 	Dialer func(ctx context.Context, network, addr string) (net.Conn, error)
@@ -354,6 +361,10 @@ func (c *clusterNodes) GC(generation uint32) {
 			continue
 		}
 
+		if c.opt.NodeGCHook != nil {
+			c.opt.NodeGCHook(addr)
+		}
+
 		delete(c.nodes, addr)
 		collected = append(collected, node)
 	}
@@ -478,6 +489,10 @@ func newClusterState(
 
 	originHost, _, _ := net.SplitHostPort(origin)
 	isLoopbackOrigin := isLoopback(originHost)
+
+	if nodes.opt.NewClusterStateHook != nil {
+		nodes.opt.NewClusterStateHook(origin, len(slots))
+	}
 
 	for _, slot := range slots {
 		var nodes []*clusterNode
@@ -652,6 +667,7 @@ func newClusterStateHolder(fn func(ctx context.Context) (*clusterState, error)) 
 func (c *clusterStateHolder) Reload(ctx context.Context) (*clusterState, error) {
 	state, err := c.load(ctx)
 	if err != nil {
+		log.Printf("Error reloading cluster state: %s\n", err.Error())
 		return nil, err
 	}
 	c.state.Store(state)
@@ -1068,6 +1084,8 @@ func (c *ClusterClient) loadState(ctx context.Context) (*clusterState, error) {
 
 		slots, err := node.Client.ClusterSlots(ctx).Result()
 		if err != nil {
+			log.Printf("Error getting cluster slots from node %s: %s", addr, err.Error())
+
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -1086,6 +1104,12 @@ func (c *ClusterClient) loadState(ctx context.Context) (*clusterState, error) {
 	c.nodes.mu.Lock()
 	c.nodes.activeAddrs = nil
 	c.nodes.mu.Unlock()
+
+	errStr := ""
+	if firstErr != nil {
+		errStr = firstErr.Error()
+	}
+	log.Printf("No node was connectable in loadState: %s\n", errStr)
 
 	return nil, firstErr
 }
